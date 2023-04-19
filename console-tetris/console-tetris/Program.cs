@@ -5,38 +5,7 @@ namespace console_tetris
 {
     class Program
     {
-        //private enum InputDir { none, right, left, down }
-        //static private InputDir _dirInput;
-
-        //static private bool[][,] blocks = new bool[][,]{
-        //    new bool[,] {
-        //        {true, true, true, true}
-        //    },
-        //    new bool[,] {
-        //        {true, false, false},
-        //        {true, true, true}
-        //    },
-        //    new bool[,] {
-        //        {false, false, true},
-        //        {true, true, true}
-        //    },
-        //    new bool[,]{
-        //        {true, true},
-        //        {true, true}
-        //    },
-        //    new bool[,] {
-        //        {false, true, true},
-        //        {true, true, false}
-        //    },
-        //    new bool[,]  {
-        //        {true, true, false},
-        //        {false, true, true}
-        //    },
-        //    new bool[,]  {
-        //        {false, true, false},
-        //        {true, true, true}
-        //    }
-        //};
+        static Random rng = new Random();
         static private bool[,,] blocks = new bool[,,]
         {
             {
@@ -106,6 +75,7 @@ namespace console_tetris
 
         static int[] collAdjustMent = new int[2];
 
+
         static void Main(string[] args)
         {
             ResetValues();
@@ -132,9 +102,14 @@ namespace console_tetris
         {
             board = new bool[20, 10];
 
+            ResetPos();
+        }
+        static void ResetPos()
+        {
             spawnPos.CopyTo(currBlockPos, 0);
             spawnPos.CopyTo(lastBlockPos, 0);
         }
+
 
         static async void InputLoop()
         {
@@ -190,16 +165,16 @@ namespace console_tetris
         static void UpdateBlock()
         {
             PlaceBlock(lastBlockPos, lastTile, false);
+            bool blockstopped = false;
 
-
-            if (CheckForColl(currBlockPos) && collAdjustMent[0] == 0 && collAdjustMent[1] == 0)
+            if (CheckForColl(currBlockPos, out blockstopped) && collAdjustMent[0] == 0 && collAdjustMent[1] == 0)
                 lastBlockPos.CopyTo(currBlockPos, 0);
 
             while (collAdjustMent[0] != 0 || collAdjustMent[1] != 0)
             {
                 currBlockPos[0] += collAdjustMent[0];
                 currBlockPos[1] += collAdjustMent[1];
-                CheckForColl(currBlockPos);
+                CheckForColl(currBlockPos, out blockstopped);
             }
 
             currBlockPos.CopyTo(lastBlockPos, 0);
@@ -207,21 +182,53 @@ namespace console_tetris
 
             PlaceBlock(currBlockPos, currTile);
 
+            if (blockstopped)
+                SpawnBlock();
+
             UpdateBoard(board);
         }
 
         static bool[,] RotateBlock(in bool[,] block)
         {
+            bool[,] result = block;
+            
+            result = Rotate(result);
+            result = Flip(result, new int[] { 1, 0 });
+            return result;
+        }
+        static bool[,] Rotate(in bool[,] block)
+        {
             bool[,] rotated = new bool[block.GetLength(1), block.GetLength(0)];
-            for(int y = 0; y < block.GetLength(0); y++)
+            for (int y = 0; y < block.GetLength(0); y++)
             {
-                for(int x = 0; x < block.GetLength(1); x++)
+                for (int x = 0; x < block.GetLength(1); x++)
                 {
                     rotated[x, y] = block[y, x];
                 }
             }
             return rotated;
         }
+        static bool[,] Flip(in bool[,] block, int[] axis)
+        {
+            bool[,] flipped = new bool[block.GetLength(0), block.GetLength(1)];
+            for(int y = 0; y < block.GetLength(0); y++)
+            {
+                for(int x = 0; x < block.GetLength(1); x++)
+                {
+                    int blockY = y;
+                    int blockX = x;
+
+                    if (axis[0] != 0)
+                        blockX = block.GetLength(1) - x - 1;
+                    if (axis[1] != 0)
+                        blockY = block.GetLength(0) - y - 1;
+
+                    flipped[y, x] = block[blockY, blockX];
+                }
+            }
+            return flipped;
+        }
+
 
         static void PlaceBlock(int[] pos,bool[,] tile , bool place = true)
         {
@@ -240,14 +247,21 @@ namespace console_tetris
             }
         }
 
-        static bool CheckForColl(int[] pos)
+        static void SpawnBlock()
+        {
+            ResetPos();
+            CopyValues(in blocks, rng.Next(0, blocks.GetLength(0)) , out currTile);
+            CopyValues(in currTile, out lastTile);
+        }
+
+        static bool CheckForColl(int[] pos, out bool blockstopped)
         {
             collAdjustMent[0] = 0;
             collAdjustMent[1] = 0;
             bool collOccured = false;
             int tileBottom = 0;
 
-            bool tileBottomHit;
+            bool tileBottomHit = false;
 
             for(int y = 0; y < currTile.GetLength(0); y++)
             {
@@ -261,17 +275,31 @@ namespace console_tetris
                     int boardX = pos[0] + x;
 
                     if (boardX < 0)
-                        collAdjustMent[0]++;
+                        collAdjustMent[0] = 1;
                     else if (boardX >= board.GetLength(1))
-                        collAdjustMent[0]--;
+                        collAdjustMent[0] = -1;
 
                     if (boardY >= board.GetLength(0))
-                        collAdjustMent[1]--;
+                        collAdjustMent[1] = -1;
 
                     if (( collAdjustMent[0] != 0 || collAdjustMent[1] != 0 || boardY < 0 ) || (board[boardY, boardX]))
                         collOccured = true;
                 }
             }
+
+            int bottomLineBoard = pos[1] + tileBottom;
+            tileBottomHit = bottomLineBoard >= board.GetLength(0) - 1;
+
+            for(int x = 0; x < currTile.GetLength(1) && !tileBottomHit; x++)
+            {
+                int boardX = pos[0] + x;
+                if (!currTile[tileBottom, x] || boardX < 0 || boardX >= board.GetLength(1)) 
+                    continue;
+                if (board[bottomLineBoard + 1, boardX])
+                    tileBottomHit = true;
+            }
+            blockstopped = tileBottomHit;
+
             return collOccured;
         }
 
@@ -281,6 +309,13 @@ namespace console_tetris
             for (int y = 0; y < arr1.GetLength(0); y++)
                 for (int x = 0; x < arr1.GetLength(1); x++)
                     arr2[y, x] = arr1[y, x];
+        }
+        static void CopyValues<t>(in t[,,] arr1, in int index, out t[,] arr2)
+        {
+            arr2 = new t[arr1.GetLength(1), arr1.GetLength(2)];
+            for (int y = 0; y < arr1.GetLength(1); y++)
+                for (int x = 0; x < arr1.GetLength(2); x++)
+                    arr2[y, x] = arr1[index,y, x];
         }
     }
 }
