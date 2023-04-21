@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Threading.Tasks;
+using System.Collections.Generic;
 
 namespace console_tetris
 {
@@ -75,20 +76,63 @@ namespace console_tetris
 
         static int[] collAdjustMent = new int[2];
 
+        static bool inGame = true;
+        static bool inputLoopRunning = false;
+        static bool gameLoopRunning = false;
 
         static void Main(string[] args)
         {
-            ResetValues();
+            string[] menuOptions = new string[] { "Play", "Exit" };
+            int pointer = 0;
 
-            Task.Run( InputLoop );
-            Task.Run( GameLoop );
+            while (true)
+            {
+                bool inMenu = true;
+                while (inMenu)
+                {
+                    Console.Clear();
+                    Console.WriteLine("__________\n| TETRIS |\n‾‾‾‾‾‾‾‾‾‾\n");
+                    for (int i = 0; i < menuOptions.Length; i++)
+                    {
+                        if (pointer == i)
+                            Console.Write(" > ");
+                        Console.WriteLine(menuOptions[i]);
+                    }
 
-            while (true) ;
+                    switch (Console.ReadKey(true).Key)
+                    {
+                        case ConsoleKey.Enter:
+                        case ConsoleKey.Spacebar:
+                            if (pointer == 0)
+                                inMenu = false;
+                            else if (pointer == 1)
+                                return;
+                            break;
+                        case ConsoleKey.UpArrow:
+                            pointer--;
+                            pointer = Math.Clamp(pointer, 0, menuOptions.Length - 1);
+                            break;
+                        case ConsoleKey.DownArrow:
+                            pointer++;
+                            pointer = Math.Clamp(pointer, 0, menuOptions.Length - 1);
+                            break;
+                    }
+                }
+
+                inGame = true;
+
+                ResetValues();
+
+                Task iLoop = Task.Run(InputLoop);
+                Task gLoop = Task.Run(GameLoop);
+
+                while (inGame || inputLoopRunning || gameLoopRunning) ;
+            }
         }
 
         static async void GameLoop() {
-
-            while (true)
+            gameLoopRunning = true;
+            while (inGame)
             {
                 currBlockPos[1]++;
 
@@ -96,6 +140,7 @@ namespace console_tetris
 
                 await Task.Delay(updateRate);
             }
+            gameLoopRunning = false;
         }
 
         static void ResetValues()
@@ -113,31 +158,34 @@ namespace console_tetris
 
         static async void InputLoop()
         {
-            while (true)
+            inputLoopRunning = true;
+            while (inGame)
             {
                 if (!Console.KeyAvailable)
                     continue;
 
-
-
                 switch (Console.ReadKey(true).Key)
                 {
+                    case ConsoleKey.Spacebar:
+                        currBlockPos[1]++;
+                        break;
                     case ConsoleKey.LeftArrow:
                         currBlockPos[0]--;
                         break;
                     case ConsoleKey.RightArrow:
                         currBlockPos[0]++;
                         break;
-                    case ConsoleKey.DownArrow:
-                        currBlockPos[1]++;
-                        break;
                     case ConsoleKey.UpArrow:
-                        currTile = RotateBlock(in currTile);
+                        currTile = RotateBlock(in currTile, true);
+                        break;
+                    case ConsoleKey.DownArrow:
+                        currTile = RotateBlock(in currTile, false);
                         break;
                 }
 
                 UpdateBlock();
             }
+            inputLoopRunning = false;
         }
 
         static void UpdateBoard(bool[,] board)
@@ -168,7 +216,12 @@ namespace console_tetris
             bool blockstopped = false;
 
             if (CheckForColl(currBlockPos, out blockstopped) && collAdjustMent[0] == 0 && collAdjustMent[1] == 0)
+            {
                 lastBlockPos.CopyTo(currBlockPos, 0);
+                if (CheckForColl(currBlockPos, out blockstopped) && currBlockPos[0] == spawnPos[0] && currBlockPos[1] == spawnPos[1])
+                    inGame = false;
+            }
+
 
             while (collAdjustMent[0] != 0 || collAdjustMent[1] != 0)
             {
@@ -188,12 +241,19 @@ namespace console_tetris
             UpdateBoard(board);
         }
 
-        static bool[,] RotateBlock(in bool[,] block)
+        static bool[,] RotateBlock(in bool[,] block, bool clockwise)
         {
             bool[,] result = block;
             
             result = Rotate(result);
-            result = Flip(result, new int[] { 1, 0 });
+
+            int[] flipAxis;
+            if (clockwise)
+                flipAxis = new int[] { 1, 0 };
+            else
+                flipAxis = new int[] { 0, 1 };
+
+            result = Flip(result, flipAxis);
             return result;
         }
         static bool[,] Rotate(in bool[,] block)
@@ -252,6 +312,7 @@ namespace console_tetris
             ResetPos();
             CopyValues(in blocks, rng.Next(0, blocks.GetLength(0)) , out currTile);
             CopyValues(in currTile, out lastTile);
+            RemoveFullLines();
         }
 
         static bool CheckForColl(int[] pos, out bool blockstopped)
@@ -259,7 +320,10 @@ namespace console_tetris
             collAdjustMent[0] = 0;
             collAdjustMent[1] = 0;
             bool collOccured = false;
-            int tileBottom = 0;
+
+            int[] tileBottom = new int[currTile.GetLength(1)];
+            for (int i = 0; i < tileBottom.Length; i++)
+                tileBottom[i] = -1;
 
             bool tileBottomHit = false;
 
@@ -269,7 +333,7 @@ namespace console_tetris
                 {
                     if (!currTile[y, x])
                         continue;
-                    tileBottom = y;
+                    tileBottom[x] = y;
 
                     int boardY = pos[1] + y;
                     int boardX = pos[0] + x;
@@ -287,20 +351,64 @@ namespace console_tetris
                 }
             }
 
-            int bottomLineBoard = pos[1] + tileBottom;
-            tileBottomHit = bottomLineBoard >= board.GetLength(0) - 1;
-
-            for(int x = 0; x < currTile.GetLength(1) && !tileBottomHit; x++)
+            for(int x = 0; x < tileBottom.Length && !tileBottomHit; x++)
             {
-                int boardX = pos[0] + x;
-                if (!currTile[tileBottom, x] || boardX < 0 || boardX >= board.GetLength(1)) 
+                if (tileBottom[x] < 0)
                     continue;
-                if (board[bottomLineBoard + 1, boardX])
+
+                int boardX = pos[0] + x;
+                int boardY = pos[1] + tileBottom[x];
+                if (!currTile[tileBottom[x], x] || boardX < 0 || boardX >= board.GetLength(1)) 
+                    continue;
+                if (boardY + 1 >= board.GetLength(0) || board[boardY + 1, boardX])
                     tileBottomHit = true;
             }
             blockstopped = tileBottomHit;
 
             return collOccured;
+        }
+
+        static void RemoveFullLines()
+        {
+            int[] fullLines = CheckForFullLines(in board);
+            for(int l = 0; l < fullLines.Length; l++)
+            {
+                MoveDownLinesAbove(fullLines[l], ref board);
+            }
+        }
+
+        static int[] CheckForFullLines(in bool[,] checkboard) {
+            List<int> fullLines = new List<int>();
+
+            for(int y = 0; y < checkboard.GetLength(0); y++)
+            {
+                bool fullLine = true;
+                for(int x = 0; x < checkboard.GetLength(1); x++)
+                {
+                    if (!checkboard[y, x])
+                    {
+                        fullLine = false;
+                        break;
+                    }
+                }
+                if (fullLine)
+                    fullLines.Add(y);
+            }
+
+             return fullLines.ToArray();
+        }
+
+        static void MoveDownLinesAbove(int line, ref bool[,] board)
+        {
+            for(int y = line - 1; y >= 0; y--)
+            {
+                for(int x = 0; x < board.GetLength(1); x++)
+                {
+                    if (y + 1 >= board.GetLength(0))
+                        continue;
+                    board[y + 1, x] = board[y, x];
+                }
+            }
         }
 
         static void CopyValues<t>(in t[,] arr1, out t[,] arr2)
