@@ -54,7 +54,11 @@ namespace console_tetris
         };
 
 
-        static int updateRate = 1000;
+        static int updateRate = 900;
+        static int minUpdateRate = 300;
+        static int score = 0;
+        static int maxDifficultyScore = 4000;
+        static float difficulty = 0;
 
         static bool[,] board;
         static int[] spawnPos = new int[] { 4, 0 };
@@ -79,6 +83,7 @@ namespace console_tetris
         static bool inGame = true;
         static bool inputLoopRunning = false;
         static bool gameLoopRunning = false;
+        static bool reachedBottom = false;
 
         static void Main(string[] args)
         {
@@ -138,7 +143,7 @@ namespace console_tetris
 
                 UpdateBlock();
 
-                await Task.Delay(updateRate);
+                await Task.Delay((int)Lerp((float)updateRate, (float)minUpdateRate, difficulty));
             }
             gameLoopRunning = false;
         }
@@ -167,7 +172,12 @@ namespace console_tetris
                 switch (Console.ReadKey(true).Key)
                 {
                     case ConsoleKey.Spacebar:
-                        currBlockPos[1]++;
+                        reachedBottom = false;
+                        while (!reachedBottom)
+                        {
+                            currBlockPos[1]++;
+                            UpdateBlock();
+                        }
                         break;
                     case ConsoleKey.LeftArrow:
                         currBlockPos[0]--;
@@ -199,7 +209,7 @@ namespace console_tetris
                     if (board[y, x])
                         Console.Write('0');
                     else
-                        Console.Write(' ');
+                        Console.Write('.');
                 }
                 Console.WriteLine("|");
             }
@@ -207,7 +217,7 @@ namespace console_tetris
             for (int x = 0; x < board.GetLength(1); x++)
                 Console.Write("‾");
 
-            Console.WriteLine($"\n{currBlockPos[0]} , {currBlockPos[1]}");
+            Console.WriteLine($"\nScore: {score}");
         }
 
         static void UpdateBlock()
@@ -216,11 +226,7 @@ namespace console_tetris
             bool blockstopped = false;
 
             if (CheckForColl(currBlockPos, out blockstopped) && collAdjustMent[0] == 0 && collAdjustMent[1] == 0)
-            {
                 lastBlockPos.CopyTo(currBlockPos, 0);
-                if (CheckForColl(currBlockPos, out blockstopped) && currBlockPos[0] == spawnPos[0] && currBlockPos[1] == spawnPos[1])
-                    inGame = false;
-            }
 
 
             while (collAdjustMent[0] != 0 || collAdjustMent[1] != 0)
@@ -309,9 +315,14 @@ namespace console_tetris
 
         static void SpawnBlock()
         {
+            reachedBottom = true;
             ResetPos();
             CopyValues(in blocks, rng.Next(0, blocks.GetLength(0)) , out currTile);
             CopyValues(in currTile, out lastTile);
+
+            if (CheckForColl(currBlockPos, out bool blockstopped))
+                inGame = false;
+
             RemoveFullLines();
         }
 
@@ -371,10 +382,10 @@ namespace console_tetris
         static void RemoveFullLines()
         {
             int[] fullLines = CheckForFullLines(in board);
-            for(int l = 0; l < fullLines.Length; l++)
-            {
-                MoveDownLinesAbove(fullLines[l], ref board);
-            }
+            UpdateScoreAndDifficulty(fullLines.Length);
+            for (int i = 0; i < fullLines.Length; i++)
+                MoveDownLinesAbove(fullLines[i], ref board);
+            
         }
 
         static int[] CheckForFullLines(in bool[,] checkboard) {
@@ -411,6 +422,15 @@ namespace console_tetris
             }
         }
 
+        static void UpdateScoreAndDifficulty(int clearedLines)
+        {
+            if (clearedLines <= 0)
+                return;
+
+            score += clearedLines * (int)(100f * MathF.Pow(1.5f, (float)(clearedLines - 1)));
+            difficulty = Math.Clamp((float)score / (float)maxDifficultyScore ,0f,1f);
+        }
+
         static void CopyValues<t>(in t[,] arr1, out t[,] arr2)
         {
             arr2 = new t[arr1.GetLength(0), arr1.GetLength(1)];
@@ -424,6 +444,13 @@ namespace console_tetris
             for (int y = 0; y < arr1.GetLength(1); y++)
                 for (int x = 0; x < arr1.GetLength(2); x++)
                     arr2[y, x] = arr1[index,y, x];
+        }
+
+        static float Lerp(float value1, float value2, float t)
+        {
+            t = Math.Clamp(t, 0f, 1f);
+            float diff = value2 - value1;
+            return value1 + diff * t;
         }
     }
 }
