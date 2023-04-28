@@ -61,22 +61,12 @@ namespace console_tetris
         static float difficulty = 0;
 
         static bool[,] board;
-        static int[] spawnPos = new int[] { 4, 0 };
+        static int[] spawnPos = new int[] { 3, 0 };
 
         static int[] currBlockPos = new int[2];
         static int[] lastBlockPos = new int[2];
-        static bool[,] currTile = new bool[,] {
-                {false, false, false, false },
-                {false, false, false, false },
-                {true, true, true, true },
-                {false, false, false, false }
-            };
-        static bool[,] lastTile = new bool[,] {
-                {false, false, false, false },
-                {false, false, false, false },
-                {true, true, true, true },
-                {false, false, false, false }
-            };
+        static bool[,] currTile;
+        static bool[,] lastTile;
 
         static int[] collAdjustMent = new int[2];
 
@@ -127,6 +117,7 @@ namespace console_tetris
                 inGame = true;
 
                 ResetValues();
+                SpawnBlock();
 
                 Task iLoop = Task.Run(InputLoop);
                 Task gLoop = Task.Run(GameLoop);
@@ -151,6 +142,8 @@ namespace console_tetris
         static void ResetValues()
         {
             board = new bool[20, 10];
+            score = 0;
+            difficulty = 0;
 
             ResetPos();
         }
